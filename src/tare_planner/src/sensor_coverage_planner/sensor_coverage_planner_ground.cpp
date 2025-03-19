@@ -16,6 +16,7 @@ namespace sensor_coverage_planner_3d_ns
 {
 bool PlannerParameters::ReadParameters(ros::NodeHandle& nh)
 {
+  //调用 misc_utils_ns::getParam<>() 从 ROS 参数服务器中读取各类参数
   sub_start_exploration_topic_ =
       misc_utils_ns::getParam<std::string>(nh, "sub_start_exploration_topic_", "/exploration_start");
   sub_state_estimation_topic_ =
@@ -70,6 +71,7 @@ bool PlannerParameters::ReadParameters(ros::NodeHandle& nh)
 
 void PlannerData::Initialize(ros::NodeHandle& nh, ros::NodeHandle& nh_p)
 {
+  //关键位姿点云、注册扫描数据、地形点云、碰撞检测点云...
   keypose_cloud_ =
       std::make_unique<pointcloud_utils_ns::PCLCloud<PlannerCloudPointType>>(nh, "keypose_cloud", kWorldFrameID);
   registered_scan_stack_ =
@@ -105,7 +107,8 @@ void PlannerData::Initialize(ros::NodeHandle& nh, ros::NodeHandle& nh_p)
       std::make_unique<pointcloud_utils_ns::PCLCloud<pcl::PointXYZI>>(nh, "pointcloud_manager_cloud", kWorldFrameID);
   reordered_global_subspace_cloud_ = std::make_unique<pointcloud_utils_ns::PCLCloud<pcl::PointXYZI>>(
       nh, "reordered_global_subspace_cloud", kWorldFrameID);
-
+  
+  //规划环境对象、视点管理器、局部覆盖规划器、关键位姿图、栅格地图以及可视化对象
   planning_env_ = std::make_unique<planning_env_ns::PlanningEnv>(nh, nh_p);
   viewpoint_manager_ = std::make_shared<viewpoint_manager_ns::ViewPointManager>(nh_p);
   local_coverage_planner_ = std::make_unique<local_coverage_planner_ns::LocalCoveragePlanner>(nh_p);
@@ -256,12 +259,13 @@ void SensorCoveragePlanner3D::StateEstimationCallback(const nav_msgs::Odometry::
     pd_.initial_position_.y() = pd_.robot_position_.y;
     pd_.initial_position_.z() = pd_.robot_position_.z;
   }
+  // 从四元数中提取欧拉角，更新机器人的偏航角
   double roll, pitch, yaw;
   geometry_msgs::Quaternion geo_quat = state_estimation_msg->pose.pose.orientation;
   tf::Matrix3x3(tf::Quaternion(geo_quat.x, geo_quat.y, geo_quat.z, geo_quat.w)).getRPY(roll, pitch, yaw);
 
   pd_.robot_yaw_ = yaw;
-
+  // 根据线速度判断机器人正向或反向行驶
   if (state_estimation_msg->twist.twist.linear.x > 0.4)
   {
     pd_.moving_forward_ = true;
@@ -285,16 +289,19 @@ void SensorCoveragePlanner3D::RegisteredScanCallback(const sensor_msgs::PointClo
   {
     return;
   }
+  // 将当前扫描累加到扫描栈中
   *(pd_.registered_scan_stack_->cloud_) += *(registered_scan_tmp);
+  //将点云划分为一系列体素（体积单元），并在每个体素中用一个代表性点来代替所有原始点，从而减少点的数量。
   pointcloud_downsizer_.Downsize(registered_scan_tmp, pp_.kKeyposeCloudDwzFilterLeafSize,
                                  pp_.kKeyposeCloudDwzFilterLeafSize, pp_.kKeyposeCloudDwzFilterLeafSize);
   pd_.registered_cloud_->cloud_->clear();
   pcl::copyPointCloud(*registered_scan_tmp, *(pd_.registered_cloud_->cloud_));
-
+  // 更新规划环境中的机器人位置信息和点云数据
   pd_.planning_env_->UpdateRobotPosition(pd_.robot_position_);
   pd_.planning_env_->UpdateRegisteredCloud<pcl::PointXYZI>(pd_.registered_cloud_->cloud_);
 
   registered_cloud_count_ = (registered_cloud_count_ + 1) % 5;
+  // 每接收一定次数后更新关键位姿图
   if (registered_cloud_count_ == 0)
   {
     // initialized_ = true;
@@ -316,12 +323,13 @@ void SensorCoveragePlanner3D::RegisteredScanCallback(const sensor_msgs::PointClo
 void SensorCoveragePlanner3D::TerrainMapCallback(const sensor_msgs::PointCloud2ConstPtr& terrain_map_msg)
 {
   if (pp_.kCheckTerrainCollision)
-  {
+  {//启用了地形碰撞检查
     pcl::PointCloud<pcl::PointXYZI>::Ptr terrain_map_tmp(new pcl::PointCloud<pcl::PointXYZI>());
     pcl::fromROSMsg<pcl::PointXYZI>(*terrain_map_msg, *terrain_map_tmp);
     pd_.terrain_collision_cloud_->cloud_->clear();
     for (auto& point : terrain_map_tmp->points)
-    {
+    {//只保留强度大于阈值的点 
+     //intensity 就是点云中每个点的信号强度
       if (point.intensity > pp_.kTerrainCollisionThreshold)
       {
         pd_.terrain_collision_cloud_->cloud_->points.push_back(point);
@@ -333,7 +341,7 @@ void SensorCoveragePlanner3D::TerrainMapCallback(const sensor_msgs::PointCloud2C
 void SensorCoveragePlanner3D::TerrainMapExtCallback(const sensor_msgs::PointCloud2ConstPtr& terrain_map_ext_msg)
 {
   if (pp_.kUseTerrainHeight)
-  {
+  {//当启用地形高度信息
     pcl::fromROSMsg<pcl::PointXYZI>(*terrain_map_ext_msg, *(pd_.large_terrain_cloud_->cloud_));
   }
   if (pp_.kCheckTerrainCollision)
@@ -351,7 +359,7 @@ void SensorCoveragePlanner3D::TerrainMapExtCallback(const sensor_msgs::PointClou
 }
 
 void SensorCoveragePlanner3D::CoverageBoundaryCallback(const geometry_msgs::PolygonStampedConstPtr& polygon_msg)
-{
+{//将接收到的覆盖边界传递给规划环境进行更新。
   pd_.planning_env_->UpdateCoverageBoundary((*polygon_msg).polygon);
 }
 
@@ -370,6 +378,8 @@ void SensorCoveragePlanner3D::NogoBoundaryCallback(const geometry_msgs::PolygonS
   int polygon_point_size = polygon_msg->polygon.points.size();
   std::vector<geometry_msgs::Polygon> nogo_boundary;
   geometry_msgs::Polygon polygon;
+  // …将多段禁区边界（no-go 区域）按 z 值分割为多个多边形
+  // 最后利用 Marker 对象构造边界线段，并发布用于可视化
   for (int i = 0; i < polygon_point_size; i++)
   {
     if (polygon_msg->polygon.points[i].z == polygon_id)
@@ -444,7 +454,7 @@ void SensorCoveragePlanner3D::ResetWaypointCallback(const std_msgs::Empty::Const
   waypoint_pub_.publish(waypoint);
   std::cout << "reset waypoint" << std::endl;
 }
-
+//在系统刚启动时，为机器人发送一个初始航路点，该航路点位于机器人正前方 12 米处。
 void SensorCoveragePlanner3D::SendInitialWaypoint()
 {
   // send waypoint ahead
@@ -497,6 +507,7 @@ int SensorCoveragePlanner3D::UpdateViewPoints()
     *(pd_.collision_cloud_->cloud_) += *(pd_.terrain_collision_cloud_->cloud_);
     *(pd_.collision_cloud_->cloud_) += *(pd_.terrain_ext_collision_cloud_->cloud_);
   }
+  // 更新视点管理器，包含：根据地形高度更新视点、检测与障碍物的碰撞、检测视点是否在视野内以及连通性检查
   pd_.viewpoint_manager_->CheckViewPointCollision(pd_.collision_cloud_->cloud_);
   pd_.viewpoint_manager_->CheckViewPointLineOfSight();
   pd_.viewpoint_manager_->CheckViewPointConnectivity();
@@ -521,6 +532,7 @@ void SensorCoveragePlanner3D::UpdateViewPointCoverage()
   // Update viewpoint coverage
   misc_utils_ns::Timer update_coverage_timer("update viewpoint coverage");
   update_coverage_timer.Start();
+  //利用规划环境中两类点云（差分云和堆叠云）来更新视点覆盖信息。
   pd_.viewpoint_manager_->UpdateViewPointCoverage<PlannerCloudPointType>(pd_.planning_env_->GetDiffCloud());
   pd_.viewpoint_manager_->UpdateRolledOverViewPointCoverage<PlannerCloudPointType>(
       pd_.planning_env_->GetStackedCloud());
@@ -529,6 +541,7 @@ void SensorCoveragePlanner3D::UpdateViewPointCoverage()
   geometry_msgs::Pose robot_pose;
   robot_pose.position = pd_.robot_position_;
   pd_.robot_viewpoint_.setPose(robot_pose);
+  //计算机器人自身的覆盖情况
   UpdateRobotViewPointCoverage();
   update_coverage_timer.Stop(false);
 }
@@ -548,7 +561,7 @@ void SensorCoveragePlanner3D::UpdateRobotViewPointCoverage()
 }
 
 void SensorCoveragePlanner3D::UpdateCoveredAreas(int& uncovered_point_num, int& uncovered_frontier_point_num)
-{
+{//调用规划环境更新“已覆盖区域”，并计算出未覆盖点和前沿点的数量，随后发布相关点云用于可视化
   // Update covered area
   misc_utils_ns::Timer update_coverage_area_timer("update covered area");
   update_coverage_area_timer.Start();
@@ -563,7 +576,7 @@ void SensorCoveragePlanner3D::UpdateCoveredAreas(int& uncovered_point_num, int& 
 }
 
 void SensorCoveragePlanner3D::UpdateVisitedPositions()
-{
+{//将当前机器人位置添加到已访问位置列表中，前提是该位置与已有位置的距离大于 1 米，从而避免重复记录。
   Eigen::Vector3d robot_current_position(pd_.robot_position_.x, pd_.robot_position_.y, pd_.robot_position_.z);
   bool existing = false;
   for (int i = 0; i < pd_.visited_positions_.size(); i++)
@@ -582,7 +595,7 @@ void SensorCoveragePlanner3D::UpdateVisitedPositions()
 }
 
 void SensorCoveragePlanner3D::UpdateGlobalRepresentation()
-{
+{//更新局部规划器、视点管理器和栅格地图中机器人的位置信息。
   pd_.local_coverage_planner_->SetRobotPosition(
       Eigen::Vector3d(pd_.robot_position_.x, pd_.robot_position_.y, pd_.robot_position_.z));
   bool viewpoint_rollover = pd_.viewpoint_manager_->UpdateRobotPosition(
@@ -636,7 +649,7 @@ void SensorCoveragePlanner3D::GlobalPlanning(std::vector<int>& global_cell_tsp_o
   pd_.grid_world_->AddPathsInBetweenCells(pd_.viewpoint_manager_, pd_.keypose_graph_);
 
   pd_.viewpoint_manager_->UpdateCandidateViewPointCellStatus(pd_.grid_world_);
-
+  //对全局环境进行 TSP（旅行商问题）规划，生成一条覆盖所有候选视点的全局路径。
   global_path = pd_.grid_world_->SolveGlobalTSP(pd_.viewpoint_manager_, global_cell_tsp_order, pd_.keypose_graph_);
 
   global_tsp_timer.Stop(false);
@@ -751,7 +764,7 @@ void SensorCoveragePlanner3D::PublishLocalPlanningVisualization(const exploratio
 
 exploration_path_ns::ExplorationPath SensorCoveragePlanner3D::ConcatenateGlobalLocalPath(
     const exploration_path_ns::ExplorationPath& global_path, const exploration_path_ns::ExplorationPath& local_path)
-{
+{//将全局路径与局部路径进行合理拼接，构造一条完整的探索路径。
   exploration_path_ns::ExplorationPath full_path;
   if (exploration_finished_ && near_home_ && pp_.kRushHome)
   {
@@ -799,7 +812,7 @@ exploration_path_ns::ExplorationPath SensorCoveragePlanner3D::ConcatenateGlobalL
 bool SensorCoveragePlanner3D::GetLookAheadPoint(const exploration_path_ns::ExplorationPath& local_path,
                                                 const exploration_path_ns::ExplorationPath& global_path,
                                                 Eigen::Vector3d& lookahead_point)
-{
+{//计算机器人行进时的“前视点”（lookahead point），该点指导后续航向控制。
   Eigen::Vector3d robot_position(pd_.robot_position_.x, pd_.robot_position_.y, pd_.robot_position_.z);
 
   // Determine which direction to follow on the global path
@@ -1153,16 +1166,18 @@ void SensorCoveragePlanner3D::PublishWaypoint()
 {
   geometry_msgs::PointStamped waypoint;
   if (exploration_finished_ && near_home_ && pp_.kRushHome)
-  {
+  {//如果探索已经结束且接近起始点，则直接将“家”的位置作为目标。
     waypoint.point.x = pd_.initial_position_.x();
     waypoint.point.y = pd_.initial_position_.y();
     waypoint.point.z = pd_.initial_position_.z();
   }
   else
-  {
+  {//否则，计算机器人与 lookahead 点之间的距离，尝试对其进行拓展
+  //确保机器人行进的目标点不会过近，同时仍在合理的视野范围内。
     double dx = pd_.lookahead_point_.x() - pd_.robot_position_.x;
     double dy = pd_.lookahead_point_.y() - pd_.robot_position_.y;
     double r = sqrt(dx * dx + dy * dy);
+    //如果在视野内，则使用较大的扩展距离，否则，使用较小的扩展距离
     double extend_dist =
         lookahead_point_in_line_of_sight_ ? pp_.kExtendWayPointDistanceBig : pp_.kExtendWayPointDistanceSmall;
     if (r < extend_dist && pp_.kExtendWayPoint)
@@ -1208,7 +1223,7 @@ void SensorCoveragePlanner3D::PublishRuntime()
 }
 
 double SensorCoveragePlanner3D::GetRobotToHomeDistance()
-{
+{//判断是否接近家
   Eigen::Vector3d robot_position(pd_.robot_position_.x, pd_.robot_position_.y, pd_.robot_position_.z);
   return (robot_position - pd_.initial_position_).norm();
 }
@@ -1233,7 +1248,7 @@ void SensorCoveragePlanner3D::PrintExplorationStatus(std::string status, bool cl
 }
 
 void SensorCoveragePlanner3D::CountDirectionChange()
-{
+{//跟踪机器人运动方向的变化。
   Eigen::Vector3d current_moving_direction_ =
       Eigen::Vector3d(pd_.robot_position_.x, pd_.robot_position_.y, pd_.robot_position_.z) -
       Eigen::Vector3d(pd_.last_robot_position_.x, pd_.last_robot_position_.y, pd_.last_robot_position_.z);
@@ -1272,7 +1287,7 @@ void SensorCoveragePlanner3D::CountDirectionChange()
 }
 
 void SensorCoveragePlanner3D::execute(const ros::TimerEvent&)
-{
+{//整个控制循环的主入口，由 ROS 定时器周期性调用
   if (!pp_.kAutoStart && !start_exploration_)
   {
     ROS_INFO("Waiting for start signal");
@@ -1303,7 +1318,7 @@ void SensorCoveragePlanner3D::execute(const ros::TimerEvent&)
 
     misc_utils_ns::Timer update_representation_timer("update representation");
     update_representation_timer.Start();
-
+    // 更新全局表示（栅格地图、关键位姿图、规划环境等）
     // Update grid world
     UpdateGlobalRepresentation();
 
@@ -1368,7 +1383,7 @@ void SensorCoveragePlanner3D::execute(const ros::TimerEvent&)
 
     overall_processing_timer.Stop(false);
     overall_runtime_ = overall_processing_timer.GetDuration("ms");
-
+    // 可视化部分：发布全局子空间 Marker、局部规划视野边界 Marker、全局与局部路径
     pd_.visualizer_->GetGlobalSubspaceMarker(pd_.grid_world_, global_cell_tsp_order);
     Eigen::Vector3d viewpoint_origin = pd_.viewpoint_manager_->GetOrigin();
     pd_.visualizer_->GetLocalPlanningHorizonMarker(viewpoint_origin.x(), viewpoint_origin.y(), pd_.robot_position_.z);

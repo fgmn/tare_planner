@@ -24,7 +24,7 @@ void PlanningEnvParameters::ReadParameters(ros::NodeHandle& nh)
       misc_utils_ns::getParam<int>(nh, "keypose_graph/kAddEdgeCollisionCheckPointNumThr", 1);
 
   kKeyposeCloudStackNum = misc_utils_ns::getParam<int>(nh, "kKeyposeCloudStackNum", 5);
-
+  // 点云管理器相关参数：构建 3D 点云栅格时的行、列、层数及每个单元的大小
   kPointCloudRowNum = misc_utils_ns::getParam<int>(nh, "kPointCloudRowNum", 20);
   kPointCloudColNum = misc_utils_ns::getParam<int>(nh, "kPointCloudColNum", 20);
   kPointCloudLevelNum = misc_utils_ns::getParam<int>(nh, "kPointCloudLevelNum", 10);
@@ -33,19 +33,19 @@ void PlanningEnvParameters::ReadParameters(ros::NodeHandle& nh)
   kPointCloudCellHeight = misc_utils_ns::getParam<double>(nh, "kPointCloudCellHeight", 3.0);
   kPointCloudManagerNeighborCellNum = misc_utils_ns::getParam<int>(nh, "kPointCloudManagerNeighborCellNum", 5);
   kCoverCloudZSqueezeRatio = misc_utils_ns::getParam<double>(nh, "kCoverCloudZSqueezeRatio", 2.0);
-
+  // 前沿提取相关参数
   kUseFrontier = misc_utils_ns::getParam<bool>(nh, "kUseFrontier", false);
   kFrontierClusterTolerance = misc_utils_ns::getParam<double>(nh, "kFrontierClusterTolerance", 1.0);
   kFrontierClusterMinSize = misc_utils_ns::getParam<int>(nh, "kFrontierClusterMinSize", 30);
-
+  // 是否在前沿或物体表面上使用覆盖边界
   kUseCoverageBoundaryOnFrontier = misc_utils_ns::getParam<bool>(nh, "kUseCoverageBoundaryOnFrontier", false);
   kUseCoverageBoundaryOnObjectSurface = misc_utils_ns::getParam<bool>(nh, "kUseCoverageBoundaryOnObjectSurface", false);
-
+  // 关于视点管理器和局部规划范围的参数设置
   int viewpoint_number = misc_utils_ns::getParam<int>(nh, "viewpoint_manager/number_x", 40);
   double viewpoint_resolution = misc_utils_ns::getParam<double>(nh, "viewpoint_manager/resolution_x", 1.0);
   double local_planning_horizon_half_size = viewpoint_number * viewpoint_resolution / 2;
   double sensor_range = misc_utils_ns::getParam<double>(nh, "kSensorRange", 15);
-
+  // 提取前沿的范围为局部规划范围加上传感器范围的两倍（x、y 分量），z 固定为2
   kExtractFrontierRange.x() = local_planning_horizon_half_size + sensor_range * 2;
   kExtractFrontierRange.y() = local_planning_horizon_half_size + sensor_range * 2;
   kExtractFrontierRange.z() = 2;
@@ -272,6 +272,8 @@ void PlanningEnv::UpdateCoveredArea(const lidar_model_ns::LiDARModel& robot_view
   geometry_msgs::Point robot_position = robot_viewpoint.getPosition();
   double sensor_range = viewpoint_manager->GetSensorRange();
   double coverage_occlusion_thr = viewpoint_manager->GetCoverageOcclusionThr();
+  //这个参数用于扩张（dilate）覆盖区域。在计算传感器“覆盖”时，系统先标记出那些直接观测到的点，
+  //然后利用“coverage_dilation_radius”对这些点进行半径扩张操作，将半径范围内的邻近点也认为是“被覆盖”的。
   double coverage_dilation_radius = viewpoint_manager->GetCoverageDilationRadius();
   std::vector<int> covered_point_indices;
   double vertical_fov_ratio = 0.3;  // bigger fov than viewpoints

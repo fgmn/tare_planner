@@ -17,13 +17,14 @@ bool ViewPointManagerParameter::ReadParameters(ros::NodeHandle& nh)
   kUseFrontier = misc_utils_ns::getParam<bool>(nh, "kUseFrontier", false);
 
   dimension_ = 2;
-
+  // 读取视点网格的数量，分别对应 x, y, z 方向
   kNumber.x() = misc_utils_ns::getParam<int>(nh, "viewpoint_manager/number_x", 80);
   kNumber.y() = misc_utils_ns::getParam<int>(nh, "viewpoint_manager/number_y", 80);
   kNumber.z() = misc_utils_ns::getParam<int>(nh, "viewpoint_manager/number_z", 40);
+  // 总视点数量为各方向数量的乘积
   kViewPointNumber = kNumber.x() * kNumber.y() * kNumber.z();
   kRolloverStepsize = kNumber / 5;
-
+  // 读取视点分辨率（单个视点代表的尺寸），分别对应 x, y, z
   kResolution.x() = misc_utils_ns::getParam<double>(nh, "viewpoint_manager/resolution_x", 0.5);
   kResolution.y() = misc_utils_ns::getParam<double>(nh, "viewpoint_manager/resolution_y", 0.5);
   kResolution.z() = misc_utils_ns::getParam<double>(nh, "viewpoint_manager/resolution_z", 0.5);
@@ -55,7 +56,7 @@ bool ViewPointManagerParameter::ReadParameters(ros::NodeHandle& nh)
     kCollisionGridSize(i) =
         ceil((kNumber(i) * kResolution(i) + kViewPointCollisionMargin * 2) / kCollisionGridResolution(i));
   }
-
+  // 覆盖检测的相关参数
   kCoverageOcclusionThr = misc_utils_ns::getParam<double>(nh, "kCoverageOcclusionThr", 1.0);
   kCoverageDilationRadius = misc_utils_ns::getParam<double>(nh, "kCoverageDilationRadius", 1.0);
   kCoveragePointCloudResolution = misc_utils_ns::getParam<double>(nh, "kSurfaceCloudDwzLeafSize", 1.0);
