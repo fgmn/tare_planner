@@ -21,7 +21,7 @@ kUseTerrainHeight : false
 kCheckTerrainCollision : true
 kExtendWayPoint : true
 kUseLineOfSightLookAheadPoint : true
-kNoExplorationReturnHome : false
+kNoExplorationReturnHome : true
 kExtendWayPointDistanceBig : 6.0
 kExtendWayPointDistanceSmall : 2.5
 kKeyposeCloudDwzFilterLeafSize : 0.2

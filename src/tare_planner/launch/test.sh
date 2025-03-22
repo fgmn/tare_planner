@@ -2,10 +2,10 @@
 # launch_tare_sim.sh: 启动 tare 仿真并在指定时间后关闭新开的 gnome-terminal
 
 # 1) 定义参数
-world_name="forest_80"
-x=40
-y=40
-z=1.5
+world_name="forest_160"
+x=136.600000
+y=21.000000
+# z=1.5
 max_time=6666
 
 # 记录启动脚本前的所有 gnome-terminal 进程ID

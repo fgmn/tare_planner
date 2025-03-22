@@ -1165,11 +1165,16 @@ bool SensorCoveragePlanner3D::GetLookAheadPoint(const exploration_path_ns::Explo
 void SensorCoveragePlanner3D::PublishWaypoint()
 {
   geometry_msgs::PointStamped waypoint;
-  if (exploration_finished_ && near_home_ && pp_.kRushHome)
-  {//如果探索已经结束且接近起始点，则直接将“家”的位置作为目标。
-    waypoint.point.x = pd_.initial_position_.x();
-    waypoint.point.y = pd_.initial_position_.y();
-    waypoint.point.z = pd_.initial_position_.z();
+  // if (exploration_finished_ && near_home_ && pp_.kRushHome)
+  // {//如果探索已经结束且接近起始点，则直接将“家”的位置作为目标。
+  //   // waypoint.point.x = pd_.initial_position_.x();
+  //   // waypoint.point.y = pd_.initial_position_.y();
+  //   // waypoint.point.z = pd_.initial_position_.z();
+  // }
+  if (exploration_finished_) {
+    waypoint.point.x = pd_.robot_position_.x;
+    waypoint.point.y = pd_.robot_position_.y;
+    waypoint.point.z = pd_.robot_position_.z;
   }
   else
   {//否则，计算机器人与 lookahead 点之间的距离，尝试对其进行拓展
